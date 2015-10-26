@@ -14,16 +14,16 @@ import java.security.SecureRandom;
  * The Public Key is not really public, since you do not want to give it
  * to someone else.
  */
-public class SRAKeyPairGenerator {
-
+public class SRAKeyPairGenerator implements AsymmetricCipherKeyPairGenerator {
     private static final BigInteger ONE = BigInteger.valueOf(1);
-
     private SRAKeyGenerationParameters param;
 
-    public void init(SRAKeyGenerationParameters param) {
-        this.param = param;
+    @Override
+    public void init(KeyGenerationParameters param) {
+        this.param = (SRAKeyGenerationParameters) param;
     }
 
+    @Override
     public AsymmetricCipherKeyPair generateKeyPair() {
 
         BigInteger p, q, n, d, e, pSub1, qSub1, gcd, lcm;
@@ -32,8 +32,6 @@ public class SRAKeyPairGenerator {
         q = param.getQ();
 
         n = p.multiply(q);
-
-        e = param.getE();
 
         if (p.compareTo(q) < 0)
         {
@@ -46,6 +44,8 @@ public class SRAKeyPairGenerator {
         qSub1 = q.subtract(ONE);
         gcd = pSub1.gcd(qSub1);
         lcm = pSub1.divide(gcd).multiply(qSub1);
+
+        e = chooseRandomPublicExponent(lcm);
 
         //
         // calculate the private exponent
@@ -66,17 +66,38 @@ public class SRAKeyPairGenerator {
                 new RSAPrivateCrtKeyParameters(n, e, d, p, q, dP, dQ, qInv));
     }
 
-    public static class SRAKeyGenerationParameters {
-        // todo: randomly generate e, do not put it in as a parameter, since the public exponent
-        // seems to be the only thing, making the difference for your keys in sra.
-        private BigInteger p;
-        private BigInteger q;
-        private BigInteger e;
+    private BigInteger chooseRandomPublicExponent(BigInteger lcm) {
+        while (true) {
+            BigInteger prime = new BigInteger(lcm.bitLength(), param.getCertainty(), param.getRandom());
 
-        public SRAKeyGenerationParameters(BigInteger p, BigInteger q, BigInteger publicExponent) {
+            // prime has to be greater than one.
+            if (!(prime.compareTo(ONE) == 1)) {
+                continue;
+            }
+
+            if (!prime.isProbablePrime(param.getCertainty())) {
+                continue;
+            }
+
+            // prime has to be less than phi(n).
+            if (!(prime.compareTo(lcm) == -1)) {
+                continue;
+            }
+
+            return prime;
+        }
+    }
+
+    public static class SRAKeyGenerationParameters extends KeyGenerationParameters {
+        private final BigInteger p;
+        private final BigInteger q;
+        private int certainty;
+
+        public SRAKeyGenerationParameters(BigInteger p, BigInteger q, SecureRandom random, int certainty) {
+            super(random, 0);
             this.p = p;
             this.q = q;
-            this.e = publicExponent;
+            this.certainty = certainty;
         }
 
         public BigInteger getP() {
@@ -87,8 +108,8 @@ public class SRAKeyPairGenerator {
             return q;
         }
 
-        public BigInteger getE() {
-            return e;
+        public int getCertainty() {
+            return certainty;
         }
     }
 }
